@@ -261,6 +261,8 @@
     <string name="steering_wheel_buttons">Кнопки руля</string>
     <string name="playback_control">Управление воспроизведением</string>
     <string name="audio_control">Аудиоуправление</string>
+    <string name="startup_audio_source_title">Источник при запуске</string>
+    <string name="startup_audio_source_desc">Какой источник выбирать после запуска головного устройства</string>
     <string name="general">Общее</string>
 
     <string name="public_notes">Публичные заметки</string>

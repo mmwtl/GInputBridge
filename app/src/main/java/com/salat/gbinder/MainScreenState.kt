@@ -2,6 +2,7 @@ package com.salat.gbinder
 
 import androidx.compose.runtime.Immutable
 import androidx.compose.runtime.saveable.listSaver
+import com.salat.gbinder.entity.StartupAudioSourceMode
 
 // The default parameter values are defined here
 @Immutable
@@ -34,7 +35,8 @@ internal data class MainScreenState(
     val adbDimAutoStop: Boolean = false,
     val altMenu: Boolean = true,
     val altMute: Boolean = true,
-    val altLongTime: Int = ADDITIONAL_KEYS_MIN_LONG_PRESS_TIME
+    val altLongTime: Int = ADDITIONAL_KEYS_MIN_LONG_PRESS_TIME,
+    val startupAudioSourceMode: String = StartupAudioSourceMode.DEFAULT.prefValue
 ) {
     fun updateFrom(row: List<Any?>): MainScreenState {
         return copy(
@@ -66,7 +68,10 @@ internal data class MainScreenState(
             adbDimAutoStop = row[25] as Boolean,
             altMenu = row[26] as Boolean,
             altMute = row[27] as Boolean,
-            altLongTime = row[28] as Int
+            altLongTime = row[28] as Int,
+            startupAudioSourceMode = StartupAudioSourceMode
+                .fromPref(row.getOrNull(29) as? String)
+                .prefValue
         )
     }
 
@@ -99,7 +104,8 @@ internal data class MainScreenState(
         adbDimAutoStop,
         altMenu,
         altMute,
-        altLongTime
+        altLongTime,
+        startupAudioSourceMode
     )
 
     companion object {

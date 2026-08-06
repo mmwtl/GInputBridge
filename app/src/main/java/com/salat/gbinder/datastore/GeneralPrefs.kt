@@ -23,6 +23,7 @@ object GeneralPrefs {
     val DISABLE_DURING_CALLS = booleanPreferencesKey("DISABLE_DURING_CALLS")
     val LEGACY_SOURCE_MANAGEMENT = booleanPreferencesKey("LEGACY_SOURCE_MANAGEMENT")
     val RADIO_BT_CONTROL = booleanPreferencesKey("RADIO_BT_CONTROL")
+    val STARTUP_AUDIO_SOURCE_MODE = stringPreferencesKey("STARTUP_AUDIO_SOURCE_MODE")
     val HIDE_MEDIA_WIDGET = booleanPreferencesKey("HIDE_MEDIA_WIDGET")
     val MEDIA_DATA_TRANSLATOR = booleanPreferencesKey("MEDIA_DATA_TRANSLATOR")
     val DEEP_LOGS = booleanPreferencesKey("DEEP_LOGS")
@@ -63,6 +64,7 @@ object GeneralPrefs {
             DISABLE_DURING_CALLS,
             LEGACY_SOURCE_MANAGEMENT,
             RADIO_BT_CONTROL,
+            STARTUP_AUDIO_SOURCE_MODE,
             HIDE_MEDIA_WIDGET,
             MEDIA_DATA_TRANSLATOR,
             DEEP_LOGS,

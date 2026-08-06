@@ -106,6 +106,8 @@ import com.salat.gbinder.entity.EditKeyBindParams
 import com.salat.gbinder.entity.EditKeyBindSection
 import com.salat.gbinder.entity.HugeTogglerItem
 import com.salat.gbinder.entity.KeyBindAction
+import com.salat.gbinder.entity.SegmentTogglerItem
+import com.salat.gbinder.entity.StartupAudioSourceMode
 import com.salat.gbinder.entity.parseAppCarouselValueSegment
 import com.salat.gbinder.entity.UiDownloadState
 import com.salat.gbinder.features.clusterBackground.RenderClusterBackgroundScreen
@@ -136,6 +138,7 @@ import com.salat.gbinder.ui.RenderListButton
 import com.salat.gbinder.ui.RenderIgnoreMediaAppsPickerDialog
 import com.salat.gbinder.ui.RenderMediaAppsPickerDialog
 import com.salat.gbinder.ui.RenderSwitcher
+import com.salat.gbinder.ui.SegmentToggler
 import com.salat.gbinder.ui.StatusLamp
 import com.salat.gbinder.ui.TargetRestoreDMDialog
 import com.salat.gbinder.ui.ThinWhiteProgress
@@ -1018,6 +1021,66 @@ class MainActivity : ComponentActivity() {
                 }
             }
         )
+
+        Spacer(Modifier.height(16.dp))
+
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 42.dp)
+        ) {
+            val startupAudioSourceModes = remember { StartupAudioSourceMode.entries }
+            val startupAudioSourceMode =
+                StartupAudioSourceMode.fromPref(mainScreenState.startupAudioSourceMode)
+
+            Text(
+                modifier = Modifier.fillMaxWidth(),
+                text = stringResource(R.string.startup_audio_source_title),
+                style = AppTheme.typography.screenTitle,
+                color = AppTheme.colors.contentPrimary
+            )
+
+            Spacer(Modifier.height(4.dp))
+
+            Text(
+                modifier = Modifier.fillMaxWidth(),
+                text = stringResource(R.string.startup_audio_source_desc),
+                style = AppTheme.typography.surfaceSubtitle,
+                color = AppTheme.colors.contentPrimary.copy(.4f)
+            )
+
+            Spacer(Modifier.height(10.dp))
+
+            Box(
+                Modifier
+                    .fillMaxWidth()
+                    .clip(RoundedCornerShape(10.dp))
+                    .background(AppTheme.colors.surfaceMenu)
+                    .padding(2.dp)
+            ) {
+                SegmentToggler(
+                    modifier = Modifier.fillMaxWidth(),
+                    selectedIndex = startupAudioSourceModes
+                        .indexOf(startupAudioSourceMode)
+                        .coerceAtLeast(0),
+                    items = startupAudioSourceModes.map { SegmentTogglerItem(text = it.title) },
+                    activeBackground = AppTheme.colors.contentAccent,
+                    itemContentColor = AppTheme.colors.contentPrimary
+                ) { index ->
+                    startupAudioSourceModes.getOrNull(index)?.let { mode ->
+                        updateMainScreenState(
+                            mainScreenState.copy(startupAudioSourceMode = mode.prefValue)
+                        )
+                        scope.launch(Dispatchers.IO) {
+                            dataStore.saveValue(
+                                GeneralPrefs.STARTUP_AUDIO_SOURCE_MODE,
+                                mode.prefValue
+                            )
+                        }
+                    }
+                }
+            }
+        }
 
         Spacer(Modifier.height(12.dp))
 
@@ -2665,6 +2728,7 @@ private object MainScreenSettingsRow {
         GeneralPrefs.ALT_MENU,
         GeneralPrefs.ALT_MUTE,
         GeneralPrefs.ALT_LONG_TIME,
+        GeneralPrefs.STARTUP_AUDIO_SOURCE_MODE,
     )
 
     val defaults: List<Any?> = MainScreenState.Default.toSettingsRow()

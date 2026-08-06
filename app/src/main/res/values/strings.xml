@@ -269,6 +269,13 @@
     <string name="steering_wheel_buttons">Steering wheel buttons</string>
     <string name="playback_control">Playback control</string>
     <string name="audio_control">Audio control</string>
+    <string name="startup_audio_source_title">Source on startup</string>
+    <string name="startup_audio_source_desc">Select the audio source after the head unit starts</string>
+    <string name="startup_audio_source_default">Default</string>
+    <string name="startup_audio_source_radio">Radio</string>
+    <string name="startup_audio_source_bluetooth">Bluetooth</string>
+    <string name="startup_audio_source_media">Media</string>
+    <string name="startup_audio_source_usb">USB</string>
     <string name="general">General</string>
 
     <string name="public_notes">Public notes</string>

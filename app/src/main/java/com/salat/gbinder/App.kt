@@ -67,6 +67,7 @@ import com.salat.gbinder.entity.KeyState
 import com.salat.gbinder.entity.PackagesChangedEvent
 import com.salat.gbinder.entity.PlaybackMetadata
 import com.salat.gbinder.entity.PressState
+import com.salat.gbinder.entity.StartupAudioSourceMode
 import com.salat.gbinder.entity.ToggleMediaControl
 import com.salat.gbinder.entity.parseAppCarouselValueSegment
 import com.salat.gbinder.features.launcher.LauncherDataRepository
@@ -256,6 +257,7 @@ class App : Application(), ImageLoaderFactory {
     private var disableDuringCall = false
     private var sourceManagement = false
     private var radioBtControl = true
+    private var startupAudioSourceMode = StartupAudioSourceMode.DEFAULT
     private var hideMediaWidget = false
     private var mediaDataTranslator = false
     private var deepLogs = false
@@ -877,10 +879,6 @@ class App : Application(), ImageLoaderFactory {
         launch {
             dataStore.getValueFlow(GeneralPrefs.LEGACY_SOURCE_MANAGEMENT).collect {
                 sourceManagement = it ?: false
-
-                if (isOnlineBootSwitch()) {
-                    resetIfOtherAudioSource()
-                }
             }
         }
         launch {
@@ -888,7 +886,7 @@ class App : Application(), ImageLoaderFactory {
                 val newValue = it ?: true
                 val previous = lastRadioBtControlState
                 radioBtControl = newValue
-                if (previous == false && newValue) {
+                if (mediaControlEnabled && previous == false && newValue) {
                     karaokeFocusBoot = false
                     runCatching { sendKaraokeFocus(true) }.onFailure { Timber.e(it) }
                     karaokeRetry()
@@ -899,6 +897,11 @@ class App : Application(), ImageLoaderFactory {
                     karaokeFocusBoot = false
                 }
                 lastRadioBtControlState = newValue
+            }
+        }
+        launch {
+            dataStore.getValueFlow(GeneralPrefs.STARTUP_AUDIO_SOURCE_MODE).collect {
+                startupAudioSourceMode = StartupAudioSourceMode.fromPref(it)
             }
         }
         launch {
@@ -939,7 +942,12 @@ class App : Application(), ImageLoaderFactory {
         }
         launch {
             dataStore.getValueFlow(GeneralPrefs.MEDIA_CONTROL_ENABLED).collect { enabled ->
+                val previous = mediaControlEnabled
                 mediaControlEnabled = enabled ?: false
+                if (previous && !mediaControlEnabled && radioBtControl) {
+                    sendKaraokeFocus(false)
+                    karaokeFocusBoot = false
+                }
 
                 // Sync bind ad unbind media control by pref
                 stateKeeper.setHandleMediaSessionState(
@@ -1424,8 +1432,12 @@ class App : Application(), ImageLoaderFactory {
     private suspend fun initialRuntimePrefsState() = withContext(Dispatchers.IO) {
         customLongPressEnabled = dataStore.getValueFlow(GeneralPrefs.CUSTOM_LONG_PRESS_ENABLED).first() ?: true
         customShortPressEnabled = dataStore.getValueFlow(GeneralPrefs.CUSTOM_SHORT_CLICK_ENABLED).first() ?: true
+        mediaControlEnabled = dataStore.getValueFlow(GeneralPrefs.MEDIA_CONTROL_ENABLED).first() ?: false
         sourceManagement = dataStore.getValueFlow(GeneralPrefs.LEGACY_SOURCE_MANAGEMENT).first() ?: false
         radioBtControl = dataStore.getValueFlow(GeneralPrefs.RADIO_BT_CONTROL).first() ?: true
+        startupAudioSourceMode = StartupAudioSourceMode.fromPref(
+            dataStore.getValueFlow(GeneralPrefs.STARTUP_AUDIO_SOURCE_MODE).first()
+        )
         altMute = dataStore.getValueFlow(GeneralPrefs.ALT_MUTE).first() ?: true
         altMenu = dataStore.getValueFlow(GeneralPrefs.ALT_MENU).first() ?: true
     }
@@ -1599,13 +1611,14 @@ class App : Application(), ImageLoaderFactory {
                 sourceStateListenerBound = true
             }
 
-            if (isOnlineBootSwitch()) {
-                val sourceBeforeSwitch = mMediaCenterManager?.currentAudioSource
-                resetIfOtherAudioSource()
-                if (radioBtControl && sourceBeforeSwitch.isKaraokeControl) {
-                    applyKaraokeFocusOnBootIfNeeded()
-                    karaokeRetry()
-                }
+            val sourceBeforeStartupPolicy = mMediaCenterManager?.currentAudioSource
+            val startupTarget = applyStartupAudioSourcePolicy()
+            if (mediaControlEnabled &&
+                radioBtControl &&
+                (startupTarget ?: sourceBeforeStartupPolicy).isKaraokeControl
+            ) {
+                applyKaraokeFocusOnBootIfNeeded()
+                karaokeRetry()
             }
             debugDeepLog("[MediaCenterManager] ready")
         } catch (e: Exception) {
@@ -3429,12 +3442,27 @@ class App : Application(), ImageLoaderFactory {
         if (mMediaCenterManager?.currentAudioSource != AUDIO_SOURCE) resetAudioSource()
     }.onFailure { Timber.e(it) }
 
+    private fun applyStartupAudioSourcePolicy(): MediaCenterConstant.AudioSource? {
+        val target = startupAudioSourceMode.startupAudioSource ?: return null
+        runCatching {
+            val manager = mMediaCenterManager?.takeIf { it.isAlive } ?: return target
+            if (manager.currentAudioSource == target) return target
+            if (target == AUDIO_SOURCE) {
+                manager.requestAudioSource(target, MediaCenterConstant.AppSource.WECARFLOW)
+            } else {
+                manager.requestAudioSource(target)
+            }
+            debugDeepLog("[MediaCenterManager] startup source requested: $target")
+        }.onFailure { Timber.e(it) }
+        return target
+    }
+
     private fun isLegacySourceManagement(): Boolean {
         return sourceManagement && !radioBtControl
     }
 
-    private fun isOnlineBootSwitch(): Boolean {
-        return sourceManagement || radioBtControl
+    private fun shouldManageOnlineSource(): Boolean {
+        return mediaControlEnabled && (sourceManagement || radioBtControl)
     }
 
     private fun isAllowedMediaSessionPackage(packageName: String?): Boolean {
@@ -3453,7 +3481,7 @@ class App : Application(), ImageLoaderFactory {
     }
 
     private fun shouldSwitchOnlineForFgMediaPlay(): Boolean {
-        if (!isOnlineBootSwitch()) return false
+        if (!shouldManageOnlineSource()) return false
         val currentSource = mMediaCenterManager?.currentAudioSource ?: return false
         return shouldFgExternal(currentSource, currentVisibleApp)
     }
@@ -3552,6 +3580,15 @@ class App : Application(), ImageLoaderFactory {
 
     private val MediaCenterConstant.AudioSource.isRadio
         get() = this == MediaCenterConstant.AudioSource.AUDIO_SOURCE_RADIO
+
+    private val StartupAudioSourceMode.startupAudioSource
+        get() = when (this) {
+            StartupAudioSourceMode.SYSTEM_DEFAULT -> null
+            StartupAudioSourceMode.ONLINE -> MediaCenterConstant.AudioSource.AUDIO_SOURCE_ONLINE
+            StartupAudioSourceMode.USB -> MediaCenterConstant.AudioSource.AUDIO_SOURCE_USB
+            StartupAudioSourceMode.RADIO -> MediaCenterConstant.AudioSource.AUDIO_SOURCE_RADIO
+            StartupAudioSourceMode.BT -> MediaCenterConstant.AudioSource.AUDIO_SOURCE_BT
+        }
 
     private val MediaCenterConstant.AudioSource.isCPAA
         get() = this == MediaCenterConstant.AudioSource.AUDIO_SOURCE_CPAA
