@@ -30,13 +30,11 @@ class MediaBridgeService : Service() {
 
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
     private val clients = mutableMapOf<IBinder, Client>()
-    private lateinit var commandVerifier: MediaBridgeCallerVerifier
     private lateinit var incomingMessenger: Messenger
     private var snapshotJob: Job? = null
 
     override fun onCreate() {
         super.onCreate()
-        commandVerifier = MediaBridgeCallerVerifier(this)
         incomingMessenger = Messenger(IncomingHandler())
         snapshotJob = scope.launch {
             MediaBridgeRuntime.dependencies()?.stateRepository?.snapshots?.collectLatest { snapshot ->
@@ -158,15 +156,6 @@ class MediaBridgeService : Service() {
 
     private fun handleCommand(message: Message) {
         val client = registeredClient(message) ?: return
-        if (commandVerifier.authorize(message.sendingUid) == null) {
-            sendError(
-                client.messenger,
-                message.data?.getString(MediaBridgeContract.Key.REQUEST_ID).orEmpty(),
-                MediaBridgeContract.Status.UNAUTHORIZED,
-                "command caller UID/package/certificate is not allowed",
-            )
-            return
-        }
         val request = message.data?.toMediaCommandRequest()
         if (request == null) {
             val rawCommand = message.data?.getString(MediaBridgeContract.Key.COMMAND).orEmpty()

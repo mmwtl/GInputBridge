@@ -21,20 +21,12 @@ val intent = Intent("com.salat.gbinder.media.BIND").apply {
 bindService(intent, connection, Context.BIND_AUTO_CREATE)
 ```
 
-Сервис `exported` и намеренно не имеет permission или allowlist для чтения. Любое установленное
-приложение может выполнить `REGISTER`/`GET_SNAPSHOT`, получать push snapshots и читать выданный
-ему artwork URI.
+Сервис `exported` и намеренно не имеет permission, package allowlist или проверки signing
+certificate. Любое установленное приложение может выполнить `REGISTER`/`GET_SNAPSHOT`, получать
+push snapshots, читать выданный ему artwork URI и отправлять управляющий `COMMAND`.
 
-Управляющий `COMMAND` проверяется отдельно: `Message.sendingUid` должен принадлежать package
-`com.mmwtl.atlasmediawidget`, подписанному разрешённым SHA-256 сертификатом AtlasAppWidget:
-
-```text
-EA:F9:F1:B2:DC:55:DB:19:6B:41:C2:C9:47:96:4D:68:
-09:A6:C9:54:D8:AA:7B:45:AD:6D:72:13:3A:F0:21:7E
-```
-
-Для read API `Message.sendingUid` используется только для получения package names, которым нужно
-выдать временный read grant на artwork URI; он не решает, разрешено ли чтение.
+`Message.sendingUid` используется только для получения package names, которым нужно выдать
+временный read grant на artwork URI. Он не используется для контроля доступа.
 
 ## Общие правила сообщений
 
@@ -231,7 +223,7 @@ Status:
 | 0 | `OK` | Команда передана выбранному backend/target |
 | 1 | `INVALID_REQUEST` | Нет обязательного поля или аргумент вне диапазона |
 | 2 | `UNSUPPORTED_VERSION` | Версия вне `[1,1]` |
-| 3 | `UNAUTHORIZED` | `COMMAND` отправлен не Atlas package или с другим сертификатом |
+| 3 | `UNAUTHORIZED` | Зарезервирован для совместимости; открытый v1 его не возвращает |
 | 4 | `UNKNOWN_COMMAND` | Неизвестное имя команды |
 | 5 | `BACKEND_UNAVAILABLE` | Нет OneOS/session/default target |
 | 6 | `NOT_SUPPORTED` | Source/session не поддерживает команду |
@@ -256,7 +248,7 @@ maxProtocolVersion: Int? // при version error
 Локальная сборка и unit tests не подтверждают firmware-specific поведение. На целевой Android 11
 ГУ обязательно проверить:
 
-1. bind/register/read из Atlas и другого test package без ограничений; отказ test package в `COMMAND`;
+1. bind/register/read/command из Atlas и другого test package без permission/signature ограничений;
 2. reconnect после kill/restart обоих процессов и Binder death без дублированных callbacks;
 3. USB mount/scan/unmount, BT on/connect/disconnect и CP/AA connect/disconnect flags;
 4. source/appSource при переключении ONLINE/USB/BT/RADIO/CPAA/YUNTING;
