@@ -22,8 +22,7 @@ import timber.log.Timber
 
 class MediaBridgeService : Service() {
     private data class Client(
-        val uid: Int,
-        val packageName: String,
+        val packageNames: MutableSet<String>,
         val messenger: Messenger,
         val deathRecipient: IBinder.DeathRecipient,
         val grantedArtworkUris: MutableSet<String> = mutableSetOf(),
@@ -31,13 +30,13 @@ class MediaBridgeService : Service() {
 
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
     private val clients = mutableMapOf<IBinder, Client>()
-    private lateinit var verifier: MediaBridgeCallerVerifier
+    private lateinit var commandVerifier: MediaBridgeCallerVerifier
     private lateinit var incomingMessenger: Messenger
     private var snapshotJob: Job? = null
 
     override fun onCreate() {
         super.onCreate()
-        verifier = MediaBridgeCallerVerifier(this)
+        commandVerifier = MediaBridgeCallerVerifier(this)
         incomingMessenger = Messenger(IncomingHandler())
         snapshotJob = scope.launch {
             MediaBridgeRuntime.dependencies()?.stateRepository?.snapshots?.collectLatest { snapshot ->
@@ -58,17 +57,6 @@ class MediaBridgeService : Service() {
     @SuppressLint("HandlerLeak")
     private inner class IncomingHandler : Handler(Looper.getMainLooper()) {
         override fun handleMessage(message: Message) {
-            val packageName = verifier.authorize(message.sendingUid)
-            if (packageName == null) {
-                sendError(
-                    message.replyTo,
-                    message.data?.getString(MediaBridgeContract.Key.REQUEST_ID).orEmpty(),
-                    MediaBridgeContract.Status.UNAUTHORIZED,
-                    "caller UID/package/certificate is not allowed",
-                )
-                return
-            }
-
             val version = message.data?.getInt(MediaBridgeContract.Key.PROTOCOL_VERSION, -1) ?: -1
             if (MediaBridgeContract.negotiate(version) != MediaBridgeContract.Status.OK) {
                 sendProtocolError(message.replyTo, message.data, version)
@@ -77,7 +65,7 @@ class MediaBridgeService : Service() {
 
             when (message.what) {
                 MediaBridgeContract.ClientMessage.REGISTER ->
-                    registerClient(message, packageName)
+                    registerClient(message)
 
                 MediaBridgeContract.ClientMessage.UNREGISTER ->
                     unregisterClient(message)
@@ -98,9 +86,12 @@ class MediaBridgeService : Service() {
         }
     }
 
-    private fun registerClient(message: Message, packageName: String) {
+    private fun registerClient(message: Message) {
         val replyTo = message.replyTo ?: return
         val binder = replyTo.binder
+        val packageNames = packageManager.getPackagesForUid(message.sendingUid)
+            .orEmpty()
+            .toSet()
         val existing = clients[binder]
         if (existing == null) {
             val deathRecipient = IBinder.DeathRecipient { scope.launch { removeClient(binder) } }
@@ -109,16 +100,10 @@ class MediaBridgeService : Service() {
             } catch (_: RemoteException) {
                 return
             }
-            clients[binder] = Client(message.sendingUid, packageName, replyTo, deathRecipient)
+            clients[binder] = Client(packageNames.toMutableSet(), replyTo, deathRecipient)
             MediaBridgeRuntime.clientRegistered()
-        } else if (existing.uid != message.sendingUid || existing.packageName != packageName) {
-            sendError(
-                replyTo,
-                message.data?.getString(MediaBridgeContract.Key.REQUEST_ID).orEmpty(),
-                MediaBridgeContract.Status.UNAUTHORIZED,
-                "Messenger is already registered by another identity",
-            )
-            return
+        } else {
+            existing.packageNames += packageNames
         }
 
         send(
@@ -148,8 +133,7 @@ class MediaBridgeService : Service() {
 
     private fun unregisterClient(message: Message) {
         val binder = message.replyTo?.binder ?: return
-        val client = clients[binder] ?: return
-        if (client.uid != message.sendingUid) return
+        if (clients[binder] == null) return
         removeClient(binder)
     }
 
@@ -174,6 +158,15 @@ class MediaBridgeService : Service() {
 
     private fun handleCommand(message: Message) {
         val client = registeredClient(message) ?: return
+        if (commandVerifier.authorize(message.sendingUid) == null) {
+            sendError(
+                client.messenger,
+                message.data?.getString(MediaBridgeContract.Key.REQUEST_ID).orEmpty(),
+                MediaBridgeContract.Status.UNAUTHORIZED,
+                "command caller UID/package/certificate is not allowed",
+            )
+            return
+        }
         val request = message.data?.toMediaCommandRequest()
         if (request == null) {
             val rawCommand = message.data?.getString(MediaBridgeContract.Key.COMMAND).orEmpty()
@@ -213,7 +206,7 @@ class MediaBridgeService : Service() {
     private fun registeredClient(message: Message): Client? {
         val replyTo = message.replyTo
         val client = replyTo?.binder?.let(clients::get)
-        if (client == null || client.uid != message.sendingUid) {
+        if (client == null) {
             sendError(
                 replyTo,
                 message.data?.getString(MediaBridgeContract.Key.REQUEST_ID).orEmpty(),
@@ -229,27 +222,31 @@ class MediaBridgeService : Service() {
         val removed = clients.remove(binder) ?: return
         runCatching { binder.unlinkToDeath(removed.deathRecipient, 0) }
         removed.grantedArtworkUris.forEach { artworkUri ->
-            runCatching {
-                revokeUriPermission(
-                    removed.packageName,
-                    artworkUri.toUri(),
-                    Intent.FLAG_GRANT_READ_URI_PERMISSION,
-                )
-            }.onFailure(Timber::e)
+            removed.packageNames.forEach { packageName ->
+                runCatching {
+                    revokeUriPermission(
+                        packageName,
+                        artworkUri.toUri(),
+                        Intent.FLAG_GRANT_READ_URI_PERMISSION,
+                    )
+                }.onFailure(Timber::e)
+            }
         }
         MediaBridgeRuntime.clientUnregistered()
     }
 
     private fun sendSnapshot(client: Client, snapshot: MediaSnapshot, requestId: String = "") {
         if (snapshot.artworkUri.isNotBlank()) {
-            runCatching {
-                grantUriPermission(
-                    client.packageName,
-                    snapshot.artworkUri.toUri(),
-                    Intent.FLAG_GRANT_READ_URI_PERMISSION,
-                )
-                client.grantedArtworkUris += snapshot.artworkUri
-            }.onFailure(Timber::e)
+            client.packageNames.forEach { packageName ->
+                runCatching {
+                    grantUriPermission(
+                        packageName,
+                        snapshot.artworkUri.toUri(),
+                        Intent.FLAG_GRANT_READ_URI_PERMISSION,
+                    )
+                    client.grantedArtworkUris += snapshot.artworkUri
+                }.onFailure(Timber::e)
+            }
         }
         val data = snapshot.toBundle().apply {
             if (requestId.isNotBlank()) putString(MediaBridgeContract.Key.REQUEST_ID, requestId)

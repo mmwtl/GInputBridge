@@ -7,7 +7,7 @@ Android `Messenger`; AIDL не нужен, потому что контракт 
 Существующий broadcast API GInputBridge не изменён и остаётся доступен для обратной совместимости.
 Новые media-команды через broadcast не добавляются.
 
-## Binding и модель доверия
+## Binding и доступ
 
 Клиент привязывается explicit intent:
 
@@ -21,24 +21,20 @@ val intent = Intent("com.salat.gbinder.media.BIND").apply {
 bindService(intent, connection, Context.BIND_AUTO_CREATE)
 ```
 
-Сервис `exported`, но не защищён `signature`-permission: GInputBridge и Atlas подписаны разными
-сертификатами. На каждом входящем сообщении сервис проверяет:
+Сервис `exported` и намеренно не имеет permission или allowlist для чтения. Любое установленное
+приложение может выполнить `REGISTER`/`GET_SNAPSHOT`, получать push snapshots и читать выданный
+ему artwork URI.
 
-1. `Message.sendingUid`;
-2. что `PackageManager.getPackagesForUid(uid)` содержит
-   `com.mmwtl.atlasmediawidget`;
-3. что signing certificate этого package совпадает с allowlist SHA-256.
-
-Protocol v1 разрешает сертификат release-ключа AtlasAppWidget, которым должен подписываться Atlas:
+Управляющий `COMMAND` проверяется отдельно: `Message.sendingUid` должен принадлежать package
+`com.mmwtl.atlasmediawidget`, подписанному разрешённым SHA-256 сертификатом AtlasAppWidget:
 
 ```text
 EA:F9:F1:B2:DC:55:DB:19:6B:41:C2:C9:47:96:4D:68:
 09:A6:C9:54:D8:AA:7B:45:AD:6D:72:13:3A:F0:21:7E
 ```
 
-Проверяется и текущий signer, и signing-certificate history Android. Клиент не передаёт package
-в `Bundle`: такое поле нельзя считать доверенным. Команда дополнительно принимается только от уже
-зарегистрированного `replyTo` Messenger с тем же UID.
+Для read API `Message.sendingUid` используется только для получения package names, которым нужно
+выдать временный read grant на artwork URI; он не решает, разрешено ли чтение.
 
 ## Общие правила сообщений
 
@@ -214,8 +210,9 @@ estimated = estimated.coerceIn(0, duration) // если duration известе�
 GInputBridge читает доступный `MediaMetadata`/OneOS bitmap или URI, декодирует с downsampling,
 ограничивает максимальную сторону 512 px и сохраняет JPEG quality 88 в приватный cache. В Binder
 никогда не передаётся `Bitmap`. URI создаётся собственным `FileProvider`; перед отправкой snapshot
-сервис вызывает `grantUriPermission` только для проверенного Atlas package. При unregister/Binder
-death grant отзывается. Клиент должен связывать загрузку с `artworkRevision`/`generation`, чтобы
+сервис вызывает `grantUriPermission` для package names зарегистрировавшегося UID. При
+unregister/Binder death grant отзывается. Клиент должен связывать загрузку с
+`artworkRevision`/`generation`, чтобы
 поздний decode старого трека не перезаписал новый.
 
 ### `what=102` — `COMMAND_RESULT`
@@ -234,7 +231,7 @@ Status:
 | 0 | `OK` | Команда передана выбранному backend/target |
 | 1 | `INVALID_REQUEST` | Нет обязательного поля или аргумент вне диапазона |
 | 2 | `UNSUPPORTED_VERSION` | Версия вне `[1,1]` |
-| 3 | `UNAUTHORIZED` | UID/package/certificate не прошли allowlist |
+| 3 | `UNAUTHORIZED` | `COMMAND` отправлен не Atlas package или с другим сертификатом |
 | 4 | `UNKNOWN_COMMAND` | Неизвестное имя команды |
 | 5 | `BACKEND_UNAVAILABLE` | Нет OneOS/session/default target |
 | 6 | `NOT_SUPPORTED` | Source/session не поддерживает команду |
@@ -259,13 +256,13 @@ maxProtocolVersion: Int? // при version error
 Локальная сборка и unit tests не подтверждают firmware-specific поведение. На целевой Android 11
 ГУ обязательно проверить:
 
-1. bind/register для Atlas APK, подписанного ключом AtlasAppWidget, и отказ APK с другим ключом;
+1. bind/register/read из Atlas и другого test package без ограничений; отказ test package в `COMMAND`;
 2. reconnect после kill/restart обоих процессов и Binder death без дублированных callbacks;
 3. USB mount/scan/unmount, BT on/connect/disconnect и CP/AA connect/disconnect flags;
 4. source/appSource при переключении ONLINE/USB/BT/RADIO/CPAA/YUNTING;
 5. PLAY/PAUSE/TOGGLE/NEXT/PREVIOUS для Radio, BT, USB и обычных MediaSession приложений;
 6. SEEK_TO для ONLINE/session с `ACTION_SEEK_TO` и `NOT_SUPPORTED` без capability;
 7. отсутствие двойного media event от hardware key после перехода на общий router;
-8. artwork от Bitmap, readable content URI и недоступность URI постороннему package;
+8. artwork от Bitmap, readable content URI и отзыв grant после unregister/Binder death;
 9. экстраполяцию progress, pause/seek correction и отсутствие ежесекундного Binder traffic;
 10. sleep/wake, OneOS service reconnect и корректную очистку stale snapshot при disconnect.
