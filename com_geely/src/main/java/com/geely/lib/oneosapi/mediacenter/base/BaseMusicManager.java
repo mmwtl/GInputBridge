@@ -522,182 +522,78 @@ public abstract class BaseMusicManager {
     }
 
     protected class DeviceStateListenerImpl extends IDeviceStateListener.Stub {
-        protected DeviceStateListenerImpl() {
+        @Override
+        public void onDeviceStateChanged(int source, int state, DeviceInfo info) {
+            mHandler.post(() -> mDeviceStateListeners.forEach(listener ->
+                    listener.onDeviceStateChanged(
+                            MediaCenterConstant.getAudioSourceEnum(source),
+                            MediaCenterConstant.getDeviceStateEnum(state),
+                            info)));
         }
 
-        /* renamed from: com.geely.lib.oneosapi.mediacenter.base.BaseMusicManager$DeviceStateListenerImpl$1 */
-        class RunnableC05191 implements Runnable {
-
-
-            @Override // java.lang.Runnable
-            public void run() {
-
-            }
+        @Override
+        public void onDeviceError(int source, int error, String errorMsg) {
+            mHandler.post(() -> mDeviceStateListeners.forEach(listener ->
+                    listener.onDeviceError(
+                            MediaCenterConstant.getAudioSourceEnum(source), error, errorMsg)));
         }
 
-        @Override // com.geely.lib.oneosapi.mediacenter.listener.IDeviceStateListener
-        public void onDeviceStateChanged(int source, int state, DeviceInfo info) throws RemoteException {
-            new Handler(Looper.getMainLooper()).post(new Runnable() { // from class: com.geely.lib.oneosapi.mediacenter.base.BaseMusicManager.DeviceStateListenerImpl.1
-
-                @Override // java.lang.Runnable
-                public void run() {
-
-                }
-            });
+        @Override
+        public void onScanPathFinish(int source, List<MusicFileData> files) {
+            mHandler.post(() -> mDeviceStateListeners.forEach(listener ->
+                    listener.onScanPathFinish(MediaCenterConstant.getAudioSourceEnum(source), files)));
         }
 
-        /* renamed from: com.geely.lib.oneosapi.mediacenter.base.BaseMusicManager$DeviceStateListenerImpl$2 */
-        class RunnableC05202 implements Runnable {
-
-
-            @Override // java.lang.Runnable
-            public void run() {
-
-            }
+        @Override
+        public void onUserInfoResult(int source, int app, OnlineUserInfo userInfo) {
+            mHandler.post(() -> mDeviceStateListeners.forEach(listener ->
+                    listener.onUserInfoResult(
+                            MediaCenterConstant.getAudioSourceEnum(source),
+                            MediaCenterConstant.getAppSourceEnum(app),
+                            userInfo)));
         }
 
-        @Override // com.geely.lib.oneosapi.mediacenter.listener.IDeviceStateListener
-        public void onDeviceError(int source, int error, String errorMsg) throws RemoteException {
-            new Handler(Looper.getMainLooper()).post(new Runnable() { // from class: com.geely.lib.oneosapi.mediacenter.base.BaseMusicManager.DeviceStateListenerImpl.2
-
-
-                @Override // java.lang.Runnable
-                public void run() {
-
-                }
-            });
+        @Override
+        public void onSearchSongResult(int source, int app, List<SearchResult> results) {
+            mHandler.post(() -> mDeviceStateListeners.forEach(listener ->
+                    listener.onSearchSongResult(
+                            MediaCenterConstant.getAudioSourceEnum(source),
+                            MediaCenterConstant.getAppSourceEnum(app),
+                            results)));
         }
 
-        /* renamed from: com.geely.lib.oneosapi.mediacenter.base.BaseMusicManager$DeviceStateListenerImpl$3 */
-        class RunnableC05213 implements Runnable {
-
-            @Override // java.lang.Runnable
-            public void run() {
-
-            }
+        @Override
+        public void onBluetoothDeviceChange(int source, List<DeviceInfo> devices) {
+            mHandler.post(() -> mDeviceStateListeners.forEach(listener ->
+                    listener.onBluetoothDeviceChange(
+                            MediaCenterConstant.getAudioSourceEnum(source), devices)));
         }
 
-        @Override // com.geely.lib.oneosapi.mediacenter.listener.IDeviceStateListener
-        public void onScanPathFinish(int source, List<MusicFileData> musicFileDataList) throws RemoteException {
-            new Handler(Looper.getMainLooper()).post(new Runnable() { // from class: com.geely.lib.oneosapi.mediacenter.base.BaseMusicManager.DeviceStateListenerImpl.3
-
-                @Override // java.lang.Runnable
-                public void run() {
-
-                }
-            });
+        @Override
+        public void onAppExistStateChanged(int source, int app, boolean existed) {
+            mHandler.post(() -> mDeviceStateListeners.forEach(listener ->
+                    listener.onAppExistStateChanged(
+                            MediaCenterConstant.getAudioSourceEnum(source),
+                            MediaCenterConstant.getAppSourceEnum(app),
+                            existed)));
         }
 
-        /* renamed from: com.geely.lib.oneosapi.mediacenter.base.BaseMusicManager$DeviceStateListenerImpl$4 */
-        class RunnableC05224 implements Runnable {
-
-
-            @Override // java.lang.Runnable
-            public void run() {
-
-            }
+        @Override
+        public void onAppDied(int app) {
+            mHandler.post(() -> mDeviceStateListeners.forEach(listener ->
+                    listener.onAppDied(MediaCenterConstant.getAppSourceEnum(app))));
         }
 
-        @Override // com.geely.lib.oneosapi.mediacenter.listener.IDeviceStateListener
-        public void onUserInfoResult(int source, int app, OnlineUserInfo userInfo) throws RemoteException {
-            new Handler(Looper.getMainLooper()).post(new Runnable() { // from class: com.geely.lib.oneosapi.mediacenter.base.BaseMusicManager.DeviceStateListenerImpl.4
-
-                @Override // java.lang.Runnable
-                public void run() {
-
-                }
-            });
+        @Override
+        public void onMediaQueryStarted(int source, DeviceInfo info) {
+            mHandler.post(() -> mQueryUsbMediaListener.forEach(listener ->
+                    listener.onMediaQueryStarted(MediaCenterConstant.getAudioSourceEnum(source), info)));
         }
 
-        /* renamed from: com.geely.lib.oneosapi.mediacenter.base.BaseMusicManager$DeviceStateListenerImpl$5 */
-        class RunnableC05235 implements Runnable {
-
-
-            @Override // java.lang.Runnable
-            public void run() {
-
-            }
-        }
-
-        @Override // com.geely.lib.oneosapi.mediacenter.listener.IDeviceStateListener
-        public void onSearchSongResult(int source, int app, List<SearchResult> searchResults) throws RemoteException {
-            new Handler(Looper.getMainLooper()).post(new Runnable() { // from class: com.geely.lib.oneosapi.mediacenter.base.BaseMusicManager.DeviceStateListenerImpl.5
-
-                @Override // java.lang.Runnable
-                public void run() {
-
-                }
-            });
-        }
-
-        /* renamed from: com.geely.lib.oneosapi.mediacenter.base.BaseMusicManager$DeviceStateListenerImpl$6 */
-        class RunnableC05246 implements Runnable {
-
-            @Override // java.lang.Runnable
-            public void run() {
-
-            }
-        }
-
-        @Override // com.geely.lib.oneosapi.mediacenter.listener.IDeviceStateListener
-        public void onBluetoothDeviceChange(int source, List<DeviceInfo> deviceInfoList) throws RemoteException {
-            new Handler(Looper.getMainLooper()).post(new Runnable() { // from class: com.geely.lib.oneosapi.mediacenter.base.BaseMusicManager.DeviceStateListenerImpl.6
-
-                @Override // java.lang.Runnable
-                public void run() {
-
-                }
-            });
-        }
-
-        /* renamed from: com.geely.lib.oneosapi.mediacenter.base.BaseMusicManager$DeviceStateListenerImpl$7 */
-        class RunnableC05257 implements Runnable {
-
-            @Override // java.lang.Runnable
-            public void run() {
-
-            }
-        }
-
-        @Override // com.geely.lib.oneosapi.mediacenter.listener.IDeviceStateListener
-        public void onAppExistStateChanged(int source, int app, boolean existed) throws RemoteException {
-            new Handler(Looper.getMainLooper()).post(new Runnable() { // from class: com.geely.lib.oneosapi.mediacenter.base.BaseMusicManager.DeviceStateListenerImpl.7
-
-
-                @Override // java.lang.Runnable
-                public void run() {
-
-                }
-            });
-        }
-
-
-        @Override // com.geely.lib.oneosapi.mediacenter.listener.IDeviceStateListener
-        public void onAppDied(int app) throws RemoteException {
-
-        }
-
-        @Override // com.geely.lib.oneosapi.mediacenter.listener.IDeviceStateListener
-        public void onMediaQueryStarted(int source, DeviceInfo info) throws RemoteException {
-            new Handler(Looper.getMainLooper()).post(new Runnable() { // from class: com.geely.lib.oneosapi.mediacenter.base.BaseMusicManager.DeviceStateListenerImpl.9
-
-                @Override // java.lang.Runnable
-                public void run() {
-
-                }
-            });
-        }
-
-        @Override // com.geely.lib.oneosapi.mediacenter.listener.IDeviceStateListener
-        public void onMediaQueryFinished(int source, DeviceInfo info) throws RemoteException {
-            new Handler(Looper.getMainLooper()).post(new Runnable() { // from class: com.geely.lib.oneosapi.mediacenter.base.BaseMusicManager.DeviceStateListenerImpl.10
-
-
-                @Override // java.lang.Runnable
-                public void run() {
-
-                }
-            });
+        @Override
+        public void onMediaQueryFinished(int source, DeviceInfo info) {
+            mHandler.post(() -> mQueryUsbMediaListener.forEach(listener ->
+                    listener.onMediaQueryFinished(MediaCenterConstant.getAudioSourceEnum(source), info)));
         }
     }
 
@@ -705,7 +601,7 @@ public abstract class BaseMusicManager {
     private class MusicStateListenerImpl extends IMusicStateListener.Stub {
         private final boolean isPsdCallback;
 
-        public MusicStateListenerImpl(final BaseMusicManager this$0) {
+        public MusicStateListenerImpl(final BaseMusicManager ignored) {
             this(false);
         }
 
@@ -713,92 +609,62 @@ public abstract class BaseMusicManager {
             this.isPsdCallback = isPsdCallback;
         }
 
-        @Override // com.geely.lib.oneosapi.mediacenter.listener.IMusicStateListener
-        public void onMediaDataChanged(int source, MediaData mediaData) throws RemoteException {
-            if (this.isPsdCallback != BaseMusicManager.this.mMediaCenterManager.isPsdMode()) {
-                return;
-            }
-            new Handler(Looper.getMainLooper()).post(new Runnable() { // from class: com.geely.lib.oneosapi.mediacenter.base.BaseMusicManager.MusicStateListenerImpl.1
-
-                @Override // java.lang.Runnable
-                public void run() {
-
-                }
-            });
+        private boolean shouldDispatch() {
+            return this.isPsdCallback == BaseMusicManager.this.mMediaCenterManager.isPsdMode();
         }
 
-
-        @Override // com.geely.lib.oneosapi.mediacenter.listener.IMusicStateListener
-        public void onPlayPositionChanged(int source, long current, long total) throws RemoteException {
-
+        @Override
+        public void onMediaDataChanged(int source, MediaData mediaData) {
+            if (!shouldDispatch()) return;
+            mHandler.post(() -> mMusicStateListeners.forEach(listener ->
+                    listener.onMediaDataChanged(MediaCenterConstant.getAudioSourceEnum(source), mediaData)));
         }
 
-        /* renamed from: com.geely.lib.oneosapi.mediacenter.base.BaseMusicManager$MusicStateListenerImpl$2 */
-        class RunnableC05362 implements Runnable {
-            final /* synthetic */ long val$current;
-            final /* synthetic */ int val$source;
-            final /* synthetic */ long val$total;
-
-            RunnableC05362(int source2, long current2, long total2) {
-                val$source = source2;
-                val$current = current2;
-                val$total = total2;
-            }
-
-            @Override // java.lang.Runnable
-            public void run() {
-                Iterator<MusicStateListener> it = BaseMusicManager.this.mMusicStateListeners.iterator();
-                while (it.hasNext()) {
-                    it.next().onPlayPositionChanged(MediaCenterConstant.getAudioSourceEnum(val$source), val$current, val$total);
-                }
-            }
+        @Override
+        public void onPlayPositionChanged(int source, long current, long total) {
+            if (!shouldDispatch()) return;
+            mHandler.post(() -> mMusicStateListeners.forEach(listener ->
+                    listener.onPlayPositionChanged(
+                            MediaCenterConstant.getAudioSourceEnum(source), current, total)));
         }
 
-        @Override // com.geely.lib.oneosapi.mediacenter.listener.IMusicStateListener
-        public void onPlayStateChanged(int source, int state) throws RemoteException {
-
+        @Override
+        public void onPlayStateChanged(int source, int state) {
+            if (!shouldDispatch()) return;
+            mHandler.post(() -> mMusicStateListeners.forEach(listener ->
+                    listener.onPlayStateChanged(
+                            MediaCenterConstant.getAudioSourceEnum(source),
+                            MediaCenterConstant.getPlayStateEnum(state))));
         }
 
-        @Override // com.geely.lib.oneosapi.mediacenter.listener.IMusicStateListener
-        public void onPlayListChanged(int source, List<MediaData> list) throws RemoteException {
-
+        @Override
+        public void onPlayListChanged(int source, List<MediaData> list) {
+            if (!shouldDispatch()) return;
+            mHandler.post(() -> mMusicStateListeners.forEach(listener ->
+                    listener.onPlayListChanged(MediaCenterConstant.getAudioSourceEnum(source), list)));
         }
 
-
-        @Override // com.geely.lib.oneosapi.mediacenter.listener.IMusicStateListener
-        public void onFavorStateChanged(int source, MediaData mediaData) throws RemoteException {
-
+        @Override
+        public void onFavorStateChanged(int source, MediaData mediaData) {
+            if (!shouldDispatch()) return;
+            mHandler.post(() -> mMusicStateListeners.forEach(listener ->
+                    listener.onFavorStateChanged(MediaCenterConstant.getAudioSourceEnum(source), mediaData)));
         }
 
-        @Override // com.geely.lib.oneosapi.mediacenter.listener.IMusicStateListener
-        public void onLrcLoad(int source, String lrc, long time) throws RemoteException {
-
+        @Override
+        public void onLrcLoad(int source, String lrc, long time) {
+            if (!shouldDispatch()) return;
+            mHandler.post(() -> mMusicStateListeners.forEach(listener ->
+                    listener.onLrcLoad(MediaCenterConstant.getAudioSourceEnum(source), lrc, time)));
         }
 
-        /* renamed from: com.geely.lib.oneosapi.mediacenter.base.BaseMusicManager$MusicStateListenerImpl$6 */
-        class RunnableC05406 implements Runnable {
-            final /* synthetic */ String val$lrc;
-            final /* synthetic */ int val$source;
-            final /* synthetic */ long val$time;
-
-            RunnableC05406(int source2, String lrc2, long time2) {
-                val$source = source2;
-                val$lrc = lrc2;
-                val$time = time2;
-            }
-
-            @Override // java.lang.Runnable
-            public void run() {
-                Iterator<MusicStateListener> it = BaseMusicManager.this.mMusicStateListeners.iterator();
-                while (it.hasNext()) {
-                    it.next().onLrcLoad(MediaCenterConstant.getAudioSourceEnum(val$source), val$lrc, val$time);
-                }
-            }
-        }
-
-        @Override // com.geely.lib.oneosapi.mediacenter.listener.IMusicStateListener
-        public void onPlayModeChange(int source, int mode) throws RemoteException {
-
+        @Override
+        public void onPlayModeChange(int source, int mode) {
+            if (!shouldDispatch()) return;
+            mHandler.post(() -> mMusicStateListeners.forEach(listener ->
+                    listener.onPlayModeChange(
+                            MediaCenterConstant.getAudioSourceEnum(source),
+                            MediaCenterConstant.getPlayModeEnum(mode))));
         }
     }
 

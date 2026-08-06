@@ -73,6 +73,9 @@ Thanks for supporting the project.
 
 ## Build and run
 
+Спецификация безопасного Messenger backend для AtlasMediaWidget находится в
+[`docs/atlas-media-bridge.md`](docs/atlas-media-bridge.md). Существующий broadcast API сохранён.
+
 From the repository root:
 
 ```bash
