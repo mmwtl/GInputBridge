@@ -3,6 +3,9 @@
     <cache-path
         name="shared_gibb"
         path="." />
+    <cache-path
+        name="media_artwork"
+        path="media_artwork/" />
     <external-files-path
         name="downloads"
         path="Download/" />

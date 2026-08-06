@@ -161,6 +161,15 @@
         </service>
 
         <service
+            android:name=".media.bridge.MediaBridgeService"
+            android:exported="true"
+            tools:ignore="ExportedService">
+            <intent-filter>
+                <action android:name="com.salat.gbinder.media.BIND" />
+            </intent-filter>
+        </service>
+
+        <service
             android:name=".DriveModeOverlayService"
             android:exported="false"
             android:foregroundServiceType="mediaPlayback" />
@@ -255,6 +264,7 @@
             <grant-uri-permission android:pathPrefix="/apk/" />
             <grant-uri-permission android:pathPrefix="/public_downloads/" />
             <grant-uri-permission android:pathPrefix="/shared_gibb/" />
+            <grant-uri-permission android:pathPrefix="/media_artwork/" />
         </provider>
     </application>
 
