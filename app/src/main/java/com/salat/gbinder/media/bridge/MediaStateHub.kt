@@ -5,8 +5,10 @@ import android.content.pm.PackageManager
 import android.media.MediaMetadata
 import android.media.session.MediaController
 import android.media.session.PlaybackState
+import com.geely.lib.oneosapi.mediacenter.bean.Frequency
 import com.geely.lib.oneosapi.mediacenter.bean.MediaData
 import com.geely.lib.oneosapi.mediacenter.constant.MediaCenterConstant
+import com.salat.gbinder.R
 import java.security.MessageDigest
 import java.util.concurrent.atomic.AtomicReference
 
@@ -278,6 +280,30 @@ internal class MediaStateHub(
         if (repository.snapshot().audioSource != source.toBridgeSource().name) return
         val speed = if (repository.snapshot().playbackState == PlaybackState.STATE_PLAYING) 1f else 0f
         repository.updateProgress(position, duration, speed)
+    }
+
+    fun onOneOsRadioState(frequency: Frequency?, playing: Boolean) {
+        val station = frequency?.let {
+            radioMetadata(
+                frequency = it.frequency,
+                band = it.band,
+                serviceName = it.serviceName.orEmpty(),
+                ensembleName = it.ensembleName.orEmpty(),
+                fallbackTitle = context.getString(R.string.audio_source_radio),
+            )
+        }
+        val updated = repository.update {
+            it.withRadioState(
+                station = station,
+                playing = playing,
+                elapsedRealtime = android.os.SystemClock.elapsedRealtime(),
+            )
+        }
+        if (station != null && updated.backendConnected &&
+            updated.audioSource == BridgeAudioSource.RADIO.name
+        ) {
+            latestArtworkToken.set("")
+        }
     }
 
     private fun clearPlayback() {

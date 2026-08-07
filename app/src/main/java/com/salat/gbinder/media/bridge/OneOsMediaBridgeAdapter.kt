@@ -2,17 +2,25 @@ package com.salat.gbinder.media.bridge
 
 import com.geely.lib.oneosapi.mediacenter.MediaCenterManager
 import com.geely.lib.oneosapi.mediacenter.bean.DeviceInfo
+import com.geely.lib.oneosapi.mediacenter.bean.Frequency
 import com.geely.lib.oneosapi.mediacenter.bean.MediaData
 import com.geely.lib.oneosapi.mediacenter.bean.MusicFileData
 import com.geely.lib.oneosapi.mediacenter.bean.OnlineUserInfo
 import com.geely.lib.oneosapi.mediacenter.bean.SearchResult
 import com.geely.lib.oneosapi.mediacenter.constant.MediaCenterConstant
 import com.geely.lib.oneosapi.mediacenter.listener.DeviceStateListener
+import com.geely.lib.oneosapi.mediacenter.listener.IRadioStateListener
 import com.geely.lib.oneosapi.mediacenter.listener.MusicStateListener
 import timber.log.Timber
 
 internal class OneOsMediaBridgeAdapter(private val hub: MediaStateHub) {
+    companion object {
+        private const val RADIO_STATE_PLAY = 0x1000
+    }
+
+    @Volatile
     private var manager: MediaCenterManager? = null
+    private var radioStateListener: IRadioStateListener? = null
     private val deviceListeners = mutableMapOf<MediaCenterConstant.AudioSource, DeviceStateListener>()
 
     private val musicStateListener = object : MusicStateListener {
@@ -57,7 +65,11 @@ internal class OneOsMediaBridgeAdapter(private val hub: MediaStateHub) {
     fun attach(mediaCenterManager: MediaCenterManager) {
         detach(notify = false)
         manager = mediaCenterManager
+        val listener = createRadioStateListener(mediaCenterManager)
+        radioStateListener = listener
         runCatching { mediaCenterManager.musicAdapterManager.addMusicStateListener(musicStateListener) }
+            .onFailure(Timber::e)
+        runCatching { mediaCenterManager.radioManager.openRadioAsync(listener) }
             .onFailure(Timber::e)
 
         mediaCenterManager.musicManagerMap.forEach { (source, musicManager) ->
@@ -76,10 +88,19 @@ internal class OneOsMediaBridgeAdapter(private val hub: MediaStateHub) {
 
     fun detach(notify: Boolean = true) {
         val currentManager = manager
+        val currentRadioListener = radioStateListener
+        // Invalidate radio callbacks before unregistering: BaseRadioManager keeps listeners in a
+        // local list and a Binder callback already in flight may finish after closeRadio().
+        manager = null
+        radioStateListener = null
         if (currentManager != null) {
             runCatching {
                 currentManager.musicAdapterManager.removeMusicStateListener(musicStateListener)
             }.onFailure(Timber::e)
+            if (currentRadioListener != null) {
+                runCatching { currentManager.radioManager.closeRadio(currentRadioListener) }
+                    .onFailure(Timber::e)
+            }
             deviceListeners.forEach { (source, listener) ->
                 runCatching {
                     currentManager.musicManagerMap[source]?.removeDeviceStateListener(listener)
@@ -87,7 +108,6 @@ internal class OneOsMediaBridgeAdapter(private val hub: MediaStateHub) {
             }
         }
         deviceListeners.clear()
-        manager = null
         if (notify) hub.onBackendDisconnected("OneOS MediaCenter disconnected")
     }
 
@@ -103,12 +123,58 @@ internal class OneOsMediaBridgeAdapter(private val hub: MediaStateHub) {
         val currentManager = manager ?: return
         runCatching {
             val source = currentManager.currentAudioSource
+            if (source == MediaCenterConstant.AudioSource.AUDIO_SOURCE_RADIO) {
+                val radio = currentManager.radioManager
+                val frequency = radio.getCurrentFrequency(radio.band)
+                publishRadioIfActive(
+                    owner = currentManager,
+                    frequency = frequency,
+                    playing = radio.radioStatus == RADIO_STATE_PLAY,
+                )
+                return@runCatching
+            }
             val adapter = currentManager.musicAdapterManager
             hub.onOneOsMediaData(source, adapter.currentMediaData)
             adapter.currentPlayState?.let { hub.onOneOsPlayState(source, it) }
             val data = adapter.currentMediaData
             hub.onOneOsProgress(source, adapter.currentPosition, data?.duration ?: -1L)
         }.onFailure(Timber::e)
+    }
+
+    private fun createRadioStateListener(
+        owner: MediaCenterManager,
+    ): IRadioStateListener = object : IRadioStateListener.Default() {
+        override fun onCurrentFrequency(frequency: Frequency?) = refreshRadio(owner, frequency)
+
+        override fun onStationFrequency(frequency: Frequency?) = refreshRadio(owner, frequency)
+
+        override fun onRadioStatusChanged(status: Int) {
+            refreshRadio(owner, frequency = null, playing = status == RADIO_STATE_PLAY)
+        }
+    }
+
+    private fun refreshRadio(
+        owner: MediaCenterManager,
+        frequency: Frequency?,
+        playing: Boolean? = null,
+    ) {
+        if (manager !== owner) return
+        if (runCatching { owner.currentAudioSource }.getOrNull() !=
+            MediaCenterConstant.AudioSource.AUDIO_SOURCE_RADIO
+        ) return
+        val currentPlaying = playing ?: runCatching {
+            owner.radioManager.radioStatus == RADIO_STATE_PLAY
+        }.getOrDefault(false)
+        publishRadioIfActive(owner, frequency, currentPlaying)
+    }
+
+    private fun publishRadioIfActive(
+        owner: MediaCenterManager,
+        frequency: Frequency?,
+        playing: Boolean,
+    ) {
+        if (manager !== owner) return
+        hub.onOneOsRadioState(frequency, playing)
     }
 
     private fun queryAvailability(

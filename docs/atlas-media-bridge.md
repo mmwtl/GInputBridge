@@ -168,6 +168,12 @@ capabilities: Long
 `connected` — что устройство/источник сейчас подключён; `selected` истинен ровно для текущего
 source. USB/BT/CPAA обновляются OneOS device callbacks, не polling-циклом.
 
+Для `RADIO` GInputBridge подписывается на OneOS `IRadioStateListener` и переиспользует поля v1:
+`title` содержит RDS/DAB service name либо нормализованную частоту, `artist` — ensemble name либо
+частоту, `mediaId` стабильно включает band, числовую частоту и service name. FM и DAB передаются в
+`MHz` без потери значащих десятичных знаков, AM — в `kHz`. Callback статуса меняет только playback
+поля и не стирает уже полученные данные станции. Новых Bundle keys для радио нет.
+
 ### Capability bits
 
 | Bit | Hex | Команда |
