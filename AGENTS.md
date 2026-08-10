@@ -51,7 +51,6 @@ system-service сценариев.
   оригинальными package names и сигнатурами.
 - `baselineProfile/` — Macrobenchmark и генерация baseline profile для `:app`.
 - `docs/atlas-media-bridge.md` — внешний контракт Messenger media bridge v1.
-- `apk/` — архив готовых APK, не исходный код и не источник текущей версии.
 
 В `app` есть крупные legacy-файлы (`App.kt`, `MainActivity.kt`). Для новой изолированной логики
 предпочитай существующие `features/`, `repository`, `datastore`, `media/bridge` и core-модули. Не
@@ -300,7 +299,7 @@ overlay windows, FileProvider, foreground services и boot initialization. Пр�
 - `**/build/**`, `.gradle/`, `.kotlin/`, `captures/`;
 - `local.properties`, `secure.signing.gradle`, `*.jks`, signing credentials;
 - сгенерированные `app/src/emuRelease/generated/`, `app/src/prodRelease/` и baseline profiles;
-- APK/AAB и содержимое `apk/`;
+- собранные APK/AAB;
 - `.DS_Store`, IDE metadata и машинно-зависимые пути.
 
 Новые зависимости добавляй через `gradle/libs.versions.toml`, если нет веской причины делать иначе.
