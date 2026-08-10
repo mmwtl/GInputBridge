@@ -1,5 +1,15 @@
 # GInputBridge
 
+> **Что изменено в версии 4.4.6 относительно 4.4.0:**
+>
+> - добавлен выбор аудиоисточника после запуска головного устройства: системный, радио, Bluetooth,
+>   медиа или USB;
+> - добавлен открытый Media Bridge v1 для AtlasMediaWidget: получение состояния источников,
+>   метаданных и обложек, а также управление воспроизведением и переключение источника;
+> - добавлена передача названия станции или частоты и статуса воспроизведения радио из OneOS;
+> - автоматическое управление аудиоисточником теперь работает только при включённом управлении
+>   воспроизведением.
+
 **GInputBridge** (Git repository `gbinder`, application id `com.salat.gbinder`) is an Android app for automotive head units. It combines a **custom launcher** (grid of apps, recents, theming), **hardware key and media bridging**, **system overlays** (drive mode, task manager, and related UI), and **vendor integration** (Geely / EcarX stacks) behind a single product.
 
 ## Support the project
