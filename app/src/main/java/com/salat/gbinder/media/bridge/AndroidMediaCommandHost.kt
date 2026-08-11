@@ -25,13 +25,41 @@ internal interface AppMediaCommandEnvironment {
     fun log(message: String)
 }
 
+internal enum class RadioPlaybackAction {
+    PLAY,
+    PAUSE,
+}
+
+internal fun isRadioPlaying(status: Int): Boolean = status == RADIO_STATUS_PLAYING
+
+internal fun radioPlaybackAction(
+    command: MediaCommand,
+    status: Int,
+): RadioPlaybackAction? = when (command) {
+    MediaCommand.PLAY -> RadioPlaybackAction.PLAY
+    MediaCommand.PAUSE -> RadioPlaybackAction.PAUSE
+    MediaCommand.TOGGLE -> if (isRadioPlaying(status)) {
+        RadioPlaybackAction.PAUSE
+    } else {
+        RadioPlaybackAction.PLAY
+    }
+
+    MediaCommand.NEXT,
+    MediaCommand.PREVIOUS,
+    MediaCommand.SEEK_TO,
+    MediaCommand.SET_SOURCE -> null
+}
+
+internal fun oneOsPlayPauseCommand(function: Int, forceToggle: Boolean): MediaCommand = when {
+    forceToggle -> MediaCommand.TOGGLE
+    function == ONE_OS_MEDIA_FUNCTION_PLAY -> MediaCommand.PLAY
+    function == ONE_OS_MEDIA_FUNCTION_PAUSE -> MediaCommand.PAUSE
+    else -> MediaCommand.TOGGLE
+}
+
 internal class AndroidMediaCommandHost(
     private val environment: AppMediaCommandEnvironment,
 ) : MediaCommandHost {
-    companion object {
-        private const val RADIO_STATE_PLAY = 0x1000
-    }
-
     override fun backendAvailable(): Boolean =
         environment.mediaCenter()?.isAlive == true ||
                 environment.allowedControllers().isNotEmpty() ||
@@ -113,24 +141,26 @@ internal class AndroidMediaCommandHost(
     private fun executeRadio(
         mediaCenter: MediaCenterManager,
         request: MediaCommandRequest,
-    ): Boolean = when (request.command) {
-        MediaCommand.PLAY -> {
-            mediaCenter.radioManager.requestAudioSource()
-            mediaCenter.radioManager.play()
-        }
+    ): Boolean {
+        val radio = mediaCenter.radioManager
+        val status = if (request.command == MediaCommand.TOGGLE) radio.radioStatus else 0
+        return when (radioPlaybackAction(request.command, status)) {
+            RadioPlaybackAction.PLAY -> {
+                radio.requestAudioSource()
+                radio.play()
+            }
 
-        MediaCommand.PAUSE -> mediaCenter.radioManager.pause()
-        MediaCommand.TOGGLE -> if (mediaCenter.radioManager.radioStatus == RADIO_STATE_PLAY) {
-            mediaCenter.radioManager.pause()
-        } else {
-            mediaCenter.radioManager.requestAudioSource()
-            mediaCenter.radioManager.play()
+            RadioPlaybackAction.PAUSE -> radio.pause()
+            null -> when (request.command) {
+                MediaCommand.NEXT -> radio.seekAsync(0)
+                MediaCommand.PREVIOUS -> radio.seekAsync(1)
+                MediaCommand.SEEK_TO,
+                MediaCommand.SET_SOURCE,
+                MediaCommand.PLAY,
+                MediaCommand.PAUSE,
+                MediaCommand.TOGGLE -> false
+            }
         }
-
-        MediaCommand.NEXT -> mediaCenter.radioManager.seekAsync(0)
-        MediaCommand.PREVIOUS -> mediaCenter.radioManager.seekAsync(1)
-        MediaCommand.SEEK_TO,
-        MediaCommand.SET_SOURCE -> false
     }
 
     private fun executeMusicAdapter(
@@ -162,6 +192,10 @@ internal class AndroidMediaCommandHost(
                 source != MediaCenterConstant.AudioSource.AUDIO_SOURCE_ONLINE
     }
 }
+
+private const val RADIO_STATUS_PLAYING = 0x1001
+private const val ONE_OS_MEDIA_FUNCTION_PLAY = 0x1000
+private const val ONE_OS_MEDIA_FUNCTION_PAUSE = 0x1001
 
 private class AndroidMediaSessionTarget(
     private val controller: MediaController,

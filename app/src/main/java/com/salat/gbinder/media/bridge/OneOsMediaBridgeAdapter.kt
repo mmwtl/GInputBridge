@@ -14,10 +14,6 @@ import com.geely.lib.oneosapi.mediacenter.listener.MusicStateListener
 import timber.log.Timber
 
 internal class OneOsMediaBridgeAdapter(private val hub: MediaStateHub) {
-    companion object {
-        private const val RADIO_STATE_PLAY = 0x1000
-    }
-
     @Volatile
     private var manager: MediaCenterManager? = null
     private var radioStateListener: IRadioStateListener? = null
@@ -129,7 +125,7 @@ internal class OneOsMediaBridgeAdapter(private val hub: MediaStateHub) {
                 publishRadioIfActive(
                     owner = currentManager,
                     frequency = frequency,
-                    playing = radio.radioStatus == RADIO_STATE_PLAY,
+                    playing = isRadioPlaying(radio.radioStatus),
                 )
                 return@runCatching
             }
@@ -149,7 +145,7 @@ internal class OneOsMediaBridgeAdapter(private val hub: MediaStateHub) {
         override fun onStationFrequency(frequency: Frequency?) = refreshRadio(owner, frequency)
 
         override fun onRadioStatusChanged(status: Int) {
-            refreshRadio(owner, frequency = null, playing = status == RADIO_STATE_PLAY)
+            refreshRadio(owner, frequency = null, playing = isRadioPlaying(status))
         }
     }
 
@@ -163,7 +159,7 @@ internal class OneOsMediaBridgeAdapter(private val hub: MediaStateHub) {
             MediaCenterConstant.AudioSource.AUDIO_SOURCE_RADIO
         ) return
         val currentPlaying = playing ?: runCatching {
-            owner.radioManager.radioStatus == RADIO_STATE_PLAY
+            isRadioPlaying(owner.radioManager.radioStatus)
         }.getOrDefault(false)
         publishRadioIfActive(owner, frequency, currentPlaying)
     }

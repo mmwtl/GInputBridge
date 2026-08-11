@@ -88,6 +88,7 @@ import com.salat.gbinder.media.bridge.MediaCommandRouter
 import com.salat.gbinder.media.bridge.MediaStateHub
 import com.salat.gbinder.media.bridge.MediaStateRepository
 import com.salat.gbinder.media.bridge.OneOsMediaBridgeAdapter
+import com.salat.gbinder.media.bridge.oneOsPlayPauseCommand
 import com.salat.gbinder.mappers.asAppSource
 import com.salat.gbinder.mappers.asAudioSource
 import com.salat.gbinder.mappers.asString
@@ -191,9 +192,6 @@ class App : Application(), ImageLoaderFactory {
         private const val ONLINE_SWITCH_RETRY_INTERVAL_MS = 1200L
         private const val KARAOKE_RETRY_COUNT = 4
         private const val KARAOKE_RETRY_DELAY_MS = 1500L
-        private const val MEDIA_CODE_PLAY = 0x1000
-        private const val MEDIA_CODE_PAUSE = 0x1001
-
         private val AUDIO_SOURCE = MediaCenterConstant.AudioSource.AUDIO_SOURCE_ONLINE
     }
 
@@ -2937,11 +2935,12 @@ class App : Application(), ImageLoaderFactory {
         val command = when (keyCode) {
             KeyCode.KEYCODE_R_MEDIA_PREVIOUS -> MediaCommand.PREVIOUS
             KeyCode.KEYCODE_R_MEDIA_NEXT -> MediaCommand.NEXT
-            KeyCode.KEYCODE_R_MEDIA_PLAY_PAUSE -> when (func) {
-                MEDIA_CODE_PLAY -> MediaCommand.PLAY
-                MEDIA_CODE_PAUSE -> MediaCommand.PAUSE
-                else -> MediaCommand.TOGGLE
-            }
+            KeyCode.KEYCODE_R_MEDIA_PLAY_PAUSE -> oneOsPlayPauseCommand(
+                function = func,
+                forceToggle = radioBtControl &&
+                        mMediaCenterManager?.currentAudioSource ==
+                        MediaCenterConstant.AudioSource.AUDIO_SOURCE_RADIO,
+            )
 
             else -> return
         }
