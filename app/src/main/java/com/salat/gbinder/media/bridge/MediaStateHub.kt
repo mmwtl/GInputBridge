@@ -10,6 +10,7 @@ import com.geely.lib.oneosapi.mediacenter.bean.MediaData
 import com.geely.lib.oneosapi.mediacenter.constant.MediaCenterConstant
 import com.salat.gbinder.R
 import java.security.MessageDigest
+import java.util.concurrent.atomic.AtomicLong
 import java.util.concurrent.atomic.AtomicReference
 
 /** Reduces Android MediaSession and OneOS callbacks into the single public snapshot. */
@@ -18,7 +19,9 @@ internal class MediaStateHub(
     private val repository: MediaStateRepository,
     private val artworkRepository: ArtworkRepository,
 ) {
-    private val latestArtworkToken = AtomicReference("")
+    private val latestArtworkRequest = AtomicLong()
+    private val onlineSourcePolicy = OnlineMediaSourcePolicy()
+    private val mediaCallbackLock = Any()
 
     fun onBackendConnecting() {
         repository.update {
@@ -36,6 +39,7 @@ internal class MediaStateHub(
         availability: Map<BridgeAudioSource, Pair<Boolean, Boolean>>,
     ) {
         val selected = audioSource.toBridgeSource()
+        onlineSourcePolicy.onAudioSource(selected)
         repository.update { before ->
             val sourceChanged = before.audioSource != selected.name
             before.copy(
@@ -62,7 +66,8 @@ internal class MediaStateHub(
     }
 
     fun onBackendDisconnected(message: String) {
-        latestArtworkToken.set("")
+        latestArtworkRequest.incrementAndGet()
+        onlineSourcePolicy.onSessionGone()
         repository.update {
             it.copy(
                 backendConnected = false,
@@ -99,6 +104,7 @@ internal class MediaStateHub(
         appSource: MediaCenterConstant.AppSource,
     ) {
         val selected = audioSource.toBridgeSource()
+        onlineSourcePolicy.onAudioSource(selected)
         repository.update { before ->
             val sourceChanged = before.audioSource != selected.name
             before.copy(
@@ -128,7 +134,7 @@ internal class MediaStateHub(
                 } else before.artworkRevision,
             )
         }
-        if (repository.snapshot().artworkUri.isBlank()) latestArtworkToken.set("")
+        if (repository.snapshot().artworkUri.isBlank()) latestArtworkRequest.incrementAndGet()
     }
 
     fun onSourceAvailability(
@@ -158,7 +164,14 @@ internal class MediaStateHub(
     }
 
     fun onMediaController(controller: MediaController?) {
+        synchronized(mediaCallbackLock) {
+            onMediaControllerLocked(controller)
+        }
+    }
+
+    private fun onMediaControllerLocked(controller: MediaController?) {
         if (controller == null) {
+            onlineSourcePolicy.onSessionGone()
             if (repository.snapshot().audioSource == BridgeAudioSource.ONLINE.name) {
                 clearPlayback()
             }
@@ -182,6 +195,11 @@ internal class MediaStateHub(
         val mediaId = metadata.text(MediaMetadata.METADATA_KEY_MEDIA_ID)
             .ifBlank { stableMediaId(title, artist) }
         val actions = state?.actions ?: 0L
+        val meaningful = ownerPackage.isNotBlank() &&
+            (title.isNotBlank() || artist.isNotBlank() || metadata.text(
+                MediaMetadata.METADATA_KEY_MEDIA_ID,
+            ).isNotBlank())
+        if (!onlineSourcePolicy.onSession(ownerPackage, meaningful)) return
 
         repository.update { before ->
             val sameMedia = before.mediaId == mediaId && before.ownerPackage == ownerPackage
@@ -224,7 +242,16 @@ internal class MediaStateHub(
     }
 
     fun onOneOsMediaData(source: MediaCenterConstant.AudioSource, data: MediaData?) {
+        synchronized(mediaCallbackLock) {
+            onOneOsMediaDataLocked(source, data)
+        }
+    }
+
+    private fun onOneOsMediaDataLocked(source: MediaCenterConstant.AudioSource, data: MediaData?) {
         if (data == null || repository.snapshot().audioSource != source.toBridgeSource().name) return
+        val meaningful = !data.id.isNullOrBlank() || !data.name.isNullOrBlank() ||
+            !data.artist.isNullOrBlank()
+        if (!onlineSourcePolicy.acceptOneOs(source.toBridgeSource(), meaningful)) return
         val ownerPackage = nativeOwnerPackage(source)
         val mediaId = data.id?.takeIf(String::isNotBlank)
             ?: stableMediaId(data.name.orEmpty(), data.artist.orEmpty())
@@ -254,7 +281,17 @@ internal class MediaStateHub(
         source: MediaCenterConstant.AudioSource,
         state: MediaCenterConstant.PlayState,
     ) {
+        synchronized(mediaCallbackLock) {
+            onOneOsPlayStateLocked(source, state)
+        }
+    }
+
+    private fun onOneOsPlayStateLocked(
+        source: MediaCenterConstant.AudioSource,
+        state: MediaCenterConstant.PlayState,
+    ) {
         if (repository.snapshot().audioSource != source.toBridgeSource().name) return
+        if (!onlineSourcePolicy.acceptOneOs(source.toBridgeSource())) return
         val androidState = when (state) {
             MediaCenterConstant.PlayState.MUSIC_STATE_PLAY -> PlaybackState.STATE_PLAYING
             MediaCenterConstant.PlayState.MUSIC_STATE_PAUSE -> PlaybackState.STATE_PAUSED
@@ -277,7 +314,18 @@ internal class MediaStateHub(
         position: Long,
         duration: Long,
     ) {
+        synchronized(mediaCallbackLock) {
+            onOneOsProgressLocked(source, position, duration)
+        }
+    }
+
+    private fun onOneOsProgressLocked(
+        source: MediaCenterConstant.AudioSource,
+        position: Long,
+        duration: Long,
+    ) {
         if (repository.snapshot().audioSource != source.toBridgeSource().name) return
+        if (!onlineSourcePolicy.acceptOneOs(source.toBridgeSource())) return
         val speed = if (repository.snapshot().playbackState == PlaybackState.STATE_PLAYING) 1f else 0f
         repository.updateProgress(position, duration, speed)
     }
@@ -302,12 +350,12 @@ internal class MediaStateHub(
         if (station != null && updated.backendConnected &&
             updated.audioSource == BridgeAudioSource.RADIO.name
         ) {
-            latestArtworkToken.set("")
+            latestArtworkRequest.incrementAndGet()
         }
     }
 
     private fun clearPlayback() {
-        latestArtworkToken.set("")
+        latestArtworkRequest.incrementAndGet()
         repository.update { before ->
             before.copy(
                 ownerPackage = "",
@@ -339,11 +387,10 @@ internal class MediaStateHub(
         bitmap: android.graphics.Bitmap?,
         sourceUri: String,
     ) {
-        val input = ArtworkInput("$ownerPackage|$mediaId", bitmap, sourceUri)
-        val token = artworkRepository.token(input)
-        latestArtworkToken.set(token)
-        artworkRepository.normalize(input, token) { normalized ->
-            if (latestArtworkToken.get() != normalized.token) return@normalize
+        val input = ArtworkInput(bitmap, sourceUri)
+        val request = latestArtworkRequest.incrementAndGet()
+        artworkRepository.normalize(input) { normalized ->
+            if (latestArtworkRequest.get() != request) return@normalize
             val snapshot = repository.snapshot()
             if (snapshot.ownerPackage != ownerPackage || snapshot.mediaId != mediaId) return@normalize
             repository.update {
@@ -395,6 +442,28 @@ internal class MediaStateHub(
 
     private fun ownerLabelFor(source: BridgeAudioSource): String =
         if (ownerPackageFor(source).isBlank()) "" else source.name
+}
+
+/** Keeps transient/competing OneOS ONLINE callbacks from replacing a useful MediaSession. */
+internal class OnlineMediaSourcePolicy {
+    private val preferredSession = AtomicReference<String?>(null)
+
+    fun onSession(ownerPackage: String, meaningful: Boolean): Boolean {
+        if (!meaningful) return false
+        preferredSession.set(ownerPackage)
+        return true
+    }
+
+    fun onSessionGone() {
+        preferredSession.set(null)
+    }
+
+    fun onAudioSource(source: BridgeAudioSource) {
+        if (source != BridgeAudioSource.ONLINE) onSessionGone()
+    }
+
+    fun acceptOneOs(source: BridgeAudioSource, meaningful: Boolean = true): Boolean =
+        source != BridgeAudioSource.ONLINE || meaningful && preferredSession.get() == null
 }
 
 internal fun MediaCenterConstant.AudioSource.toBridgeSource(): BridgeAudioSource = when (this) {

@@ -14,11 +14,9 @@ import timber.log.Timber
 import java.io.File
 import java.io.FileOutputStream
 import java.security.MessageDigest
-import java.util.concurrent.ConcurrentHashMap
 import kotlin.math.max
 
 internal data class ArtworkInput(
-    val mediaKey: String,
     val bitmap: Bitmap? = null,
     val sourceUri: String = "",
 )
@@ -40,43 +38,36 @@ internal class ArtworkRepository(
     }
 
     private val cacheDirectory = File(context.cacheDir, "media_artwork")
-    private val inFlight = ConcurrentHashMap<String, Boolean>()
-
-    fun token(input: ArtworkInput): String {
-        val bitmapIdentity = input.bitmap?.let { bitmap ->
-            "${bitmap.width}x${bitmap.height}:${bitmap.generationId}"
-        }.orEmpty()
-        return sha256("${input.mediaKey}|${input.sourceUri}|$bitmapIdentity")
-    }
-
     fun normalize(
         input: ArtworkInput,
-        token: String = token(input),
         onResult: (NormalizedArtwork) -> Unit,
     ) {
         if (input.bitmap == null && input.sourceUri.isBlank()) {
-            onResult(NormalizedArtwork(token, ""))
+            onResult(NormalizedArtwork("", ""))
             return
         }
-
-        val target = File(cacheDirectory, "$token.jpg")
-        if (target.isFile && target.length() > 0L) {
-            onResult(NormalizedArtwork(token, uriFor(target).toString()))
-            return
-        }
-        if (inFlight.putIfAbsent(token, true) != null) return
 
         scope.launch(Dispatchers.IO) {
             val result = runCatching {
                 cacheDirectory.mkdirs()
                 val decoded = input.bitmap ?: decodeUri(input.sourceUri)
                 decoded ?: return@runCatching null
-                writeNormalized(decoded, target, recycleSource = input.bitmap == null)
-                pruneCache(target)
-                NormalizedArtwork(token, uriFor(target).toString())
+                var prepared: Bitmap? = null
+                try {
+                    prepared = prepare(decoded)
+                    val token = ArtworkContentIdentity.token(prepared)
+                    val target = File(cacheDirectory, "$token.jpg")
+                    if (!target.isFile || target.length() <= 0L) {
+                        writeNormalized(prepared, target)
+                    }
+                    pruneCache(target)
+                    NormalizedArtwork(token, uriFor(target).toString())
+                } finally {
+                    if (prepared != null && prepared !== decoded) prepared.recycle()
+                    if (input.bitmap == null) decoded.recycle()
+                }
             }.onFailure(Timber::e).getOrNull()
-            inFlight.remove(token)
-            onResult(result ?: NormalizedArtwork(token, ""))
+            onResult(result ?: NormalizedArtwork("", ""))
         }
     }
 
@@ -95,27 +86,37 @@ internal class ArtworkRepository(
             ?.use { BitmapFactory.decodeStream(it, null, options) }
     }
 
-    private fun writeNormalized(source: Bitmap, target: File, recycleSource: Boolean) {
+    private fun prepare(source: Bitmap): Bitmap {
         val largest = max(source.width, source.height)
-        val normalized = if (largest > MAX_EDGE_PX) {
+        val scaled = if (largest > MAX_EDGE_PX) {
             val scale = MAX_EDGE_PX.toFloat() / largest.toFloat()
             source.scale(
                 (source.width * scale).toInt().coerceAtLeast(1),
                 (source.height * scale).toInt().coerceAtLeast(1),
             )
         } else source
+        if (scaled.config != Bitmap.Config.HARDWARE) return scaled
+        return checkNotNull(scaled.copy(Bitmap.Config.ARGB_8888, false))
+    }
 
-        val temporary = File(target.parentFile, "${target.name}.tmp")
+    private fun writeNormalized(source: Bitmap, target: File) {
+        val temporary = File.createTempFile(
+            "${target.nameWithoutExtension}-",
+            ".tmp",
+            target.parentFile,
+        )
         try {
             FileOutputStream(temporary).use { stream ->
-                check(normalized.compress(Bitmap.CompressFormat.JPEG, JPEG_QUALITY, stream))
+                check(source.compress(Bitmap.CompressFormat.JPEG, JPEG_QUALITY, stream))
                 stream.fd.sync()
             }
-            check(temporary.renameTo(target)) { "Unable to publish artwork cache file" }
+            if (!temporary.renameTo(target)) {
+                check(target.isFile && target.length() > 0L) {
+                    "Unable to publish artwork cache file"
+                }
+            }
         } finally {
             temporary.delete()
-            if (normalized !== source) normalized.recycle()
-            if (recycleSource) source.recycle()
         }
     }
 
@@ -133,8 +134,43 @@ internal class ArtworkRepository(
             .drop(MAX_CACHE_FILES - 1)
             .forEach(File::delete)
     }
+}
 
-    private fun sha256(value: String): String = MessageDigest.getInstance("SHA-256")
-        .digest(value.toByteArray())
-        .joinToString("") { byte -> "%02x".format(byte) }
+/** Canonical pixel identity, independent of Bitmap allocation and generationId. */
+internal object ArtworkContentIdentity {
+    fun token(bitmap: Bitmap): String {
+        val pixels = IntArray(bitmap.width)
+        return token(bitmap.width, bitmap.height) { row ->
+            bitmap.getPixels(pixels, 0, bitmap.width, 0, row, bitmap.width, 1)
+            pixels
+        }
+    }
+
+    fun token(width: Int, height: Int, rowPixels: (Int) -> IntArray): String {
+        require(width > 0 && height > 0)
+        val digest = MessageDigest.getInstance("SHA-256")
+        digest.updateInt(width)
+        digest.updateInt(height)
+        val bytes = ByteArray(width * Int.SIZE_BYTES)
+        repeat(height) { row ->
+            val pixels = rowPixels(row)
+            require(pixels.size == width)
+            pixels.forEachIndexed { index, pixel ->
+                val offset = index * Int.SIZE_BYTES
+                bytes[offset] = (pixel ushr 24).toByte()
+                bytes[offset + 1] = (pixel ushr 16).toByte()
+                bytes[offset + 2] = (pixel ushr 8).toByte()
+                bytes[offset + 3] = pixel.toByte()
+            }
+            digest.update(bytes)
+        }
+        return digest.digest().joinToString("") { byte -> "%02x".format(byte) }
+    }
+
+    private fun MessageDigest.updateInt(value: Int) {
+        update((value ushr 24).toByte())
+        update((value ushr 16).toByte())
+        update((value ushr 8).toByte())
+        update(value.toByte())
+    }
 }
