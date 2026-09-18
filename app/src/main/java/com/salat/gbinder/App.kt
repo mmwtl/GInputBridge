@@ -973,10 +973,6 @@ class App : Application(), ImageLoaderFactory {
         launch {
             dataStore.getValueFlow(GeneralPrefs.LEGACY_SOURCE_MANAGEMENT).collect {
                 sourceManagement = it ?: false
-
-                if (isOnlineBootSwitch()) {
-                    resetIfOtherAudioSource()
-                }
             }
         }
         launch {
@@ -1796,12 +1792,9 @@ class App : Application(), ImageLoaderFactory {
                 sourceStateListenerBound = true
             }
 
-            if (isOnlineBootSwitch()) {
-                val sourceBeforeSwitch = mMediaCenterManager?.currentAudioSource
-                resetIfOtherAudioSource()
-                if (radioBtControl && sourceBeforeSwitch.isKaraokeControl) {
-                    enableKaraokeFocusOnBoot()
-                }
+            val currentSource = mMediaCenterManager?.currentAudioSource
+            if (radioBtControl && currentSource.isKaraokeControl) {
+                enableKaraokeFocusOnBoot()
             }
             debugDeepLog("[MediaCenterManager] ready")
         } catch (e: Exception) {

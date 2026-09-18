@@ -10,6 +10,12 @@ plugins {
     alias(libs.plugins.hilt)
 }
 
+val gitBranch = providers.exec {
+    commandLine("git", "branch", "--show-current")
+}.standardOutput.asText.get().trim()
+    .replace(Regex("[^A-Za-z0-9._-]+"), "-")
+    .ifEmpty { "detached" }
+
 android {
     namespace = "com.salat.gbinder"
     compileSdk = 35
@@ -22,7 +28,7 @@ android {
         versionCode = 1719
         versionName = "4.6.1"
 
-        setProperty("archivesBaseName", "$versionName[$versionCode]GInputBridge")
+        setProperty("archivesBaseName", "$versionName[$versionCode]GInputBridge-$gitBranch")
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
